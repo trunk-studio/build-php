@@ -1,42 +1,60 @@
 pipeline {
-    agent {
-        label "jenkins-jx-base"
-    }
-    environment {
-        ORG         = 'trunksys'
-        APP_NAME    = 'builder-php'
-    }
-    stages {
-        stage('CI Build and push snapshot') {
-            when {
-                branch 'PR-*'
-            }
-            steps {
-                container('jx-base') {
-                    sh "docker build -t docker.io/$ORG/$APP_NAME:SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER ."
-                    sh "docker push docker.io/$ORG/$APP_NAME:SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER"
-                }
-            }
+  agent {
+    label "jenkins-maven"
+  }
+  environment {
+    ORG = 'trunk-studio'
+    APP_NAME = 'build-php'
+    CHARTMUSEUM_CREDS = credentials('jenkins-x-chartmuseum')
+    DOCKER_REGISTRY_ORG = 'trunk-studio'
+  }
+  stages {
+    stage('CI Build and push snapshot') {
+      when {
+        branch 'PR-*'
+      }
+      environment {
+        PREVIEW_VERSION = "0.0.0-SNAPSHOT-$BRANCH_NAME-$BUILD_NUMBER"
+        PREVIEW_NAMESPACE = "$APP_NAME-$BRANCH_NAME".toLowerCase()
+        HELM_RELEASE = "$PREVIEW_NAMESPACE".toLowerCase()
+      }
+      steps {
+        container('maven') {
+          sh "skaffold version"
+          sh "export VERSION=$PREVIEW_VERSION && skaffold build -f skaffold.yaml"
         }
-    
-        stage('Build and Push Release') {
-            when {
-                branch 'master'
-            }
-            steps {
-                container('jx-base') {
-                    sh "jx step git credentials"
-                    sh "sh ./jx/scripts/release.sh"
-                }
-            }
-        }
+      }
     }
-//     post {
-//         failure {
-//             input """Pipeline failed.
-// We will keep the build pod around to help you diagnose any failures.
+    stage('Build Release') {
+      when {
+        branch 'master'
+      }
+      steps {
+        container('maven') {
 
-// Select Proceed or Abort to terminate the build pod"""
-//         }
-//     }
+          // ensure we're not on a detached head
+          sh "git checkout master"
+          sh "git config --global credential.helper store"
+          sh "jx step git credentials"
+          sh "jx step next-version --use-git-tag-only --tag"
+          sh "export VERSION=`cat VERSION` && skaffold build -f skaffold.yaml"
+        }
+      }
+    }
+    stage('Promote to Environments') {
+      when {
+        branch 'master'
+      }
+      steps {
+        container('maven') {
+          sh "jx step changelog --version v\$(cat VERSION)"
+        }
+      }
+    }
+  }
+  post {
+        always {
+          cleanWs()
+        }
+  }
 }
