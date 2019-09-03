@@ -1,0 +1,5 @@
+github:
+  organisations:
+  - name: trunksys
+    repositories:
+    - name: build-php
