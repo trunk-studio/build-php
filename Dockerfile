@@ -1,4 +1,4 @@
-FROM jenkinsxio/builder-nodejs:0.1.114
+FROM gcr.io/jenkinsxio/builder-jx:0.1.713
 
 RUN yum install epel-release yum-utils -y
 RUN yum install -y http://rpms.remirepo.net/enterprise/remi-release-7.rpm
